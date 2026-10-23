@@ -1,0 +1,46 @@
+[package]
+name = "dfntrans-rs"
+version = "0.1.0"
+description = "Particle tracking in a discrete fracture network, based on dfnWorks DFNTrans"
+edition = "2024"
+license = "LGPL-3.0"
+
+[lib]
+name = "dfntrans"
+
+[[bin]]
+name = "dfntrans"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The dfntrans binary: command line and log to stdout
+cli = ["dep:clap", "dep:tracing-subscriber"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"], optional = true }
+# The flow solution; without its binary, thus it compiles for wasm32-unknown-unknown
+fehm-rs = { path = "../fehm-rs", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+toml = { version = "1.1", default-features = false, features = ["std", "parse", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+[dev-dependencies]
+# tests/dfngen_chain.rs: a network and its mesh, made in the test
+dfngen-rs = { path = "../dfngen-rs", default-features = false }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[lints.clippy]
+uninlined_format_args = "warn"
+needless_pass_by_value = "warn"
+explicit_iter_loop = "warn"
+redundant_else = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+cast_possible_wrap = "warn"
