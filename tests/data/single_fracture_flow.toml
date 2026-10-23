@@ -1,0 +1,13 @@
+# One vertical fracture (single_fracture.vtu, from fehm-rs): uniform flow
+# from west to east, without gravity
+mesh = "single_fracture.vtu"
+temperature = 50.0
+gravity = false
+
+[[boundary]]
+name = "west"
+pressure = 10.1
+
+[[boundary]]
+name = "east"
+pressure = 10.0

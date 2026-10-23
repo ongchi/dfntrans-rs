@@ -1,0 +1,18 @@
+# Two crossing vertical fractures (crossing_fractures.vtu): flow from west
+# and south to east and north. Particles from the west edge in proportion
+# to the in-flow flux; they cross the intersection x = y = 0.
+flow = "crossing_fractures_flow.toml"
+seed = 12345
+time_unit = "days"
+porosity = 1.0
+max_time_steps = 100000
+inflow = ["west"]
+outflow = ["east", "north"]
+routing = "complete_mixing"
+
+[seeding]
+method = "flux_weighted"
+particle_count = 200
+
+[output]
+trajectories = true

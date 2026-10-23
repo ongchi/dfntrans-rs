@@ -1,0 +1,25 @@
+# Two crossing vertical fractures (tests/data/crossing_fractures.vtu):
+# flow from west and south to east and north, with gravity
+mesh = "crossing_fractures.vtu"
+temperature = 50.0              # °C
+gravity = true                  # optional, default true; gravity is -z
+
+[[boundary]]
+name = "west"                   # the point data array boundary__west
+pressure = 10.2                 # MPa
+
+[[boundary]]
+name = "south"
+pressure = 10.1
+
+[[boundary]]
+name = "east"
+pressure = 10.0
+
+[[boundary]]
+name = "north"
+pressure = 10.05
+
+[solver]                        # optional section
+tolerance = 1e-10               # optional
+max_iterations = 20             # optional

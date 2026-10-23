@@ -1,0 +1,18 @@
+# Reference comparison with DFNTrans (scripts/compare_with_dfntrans.sh):
+# the crossing fractures, 10 particles at each in-flow node of the west
+# edge without its two corners, complete mixing
+flow = "flow.toml"
+seed = 12345
+time_unit = "days"
+porosity = 1.0
+max_time_steps = 100000
+inflow = ["west_inner"]
+outflow = ["east", "north"]
+routing = "complete_mixing"
+
+[seeding]
+method = "at_nodes"
+particles_per_node = 10
+
+[output]
+all_particles = true

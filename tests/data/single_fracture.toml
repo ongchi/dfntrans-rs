@@ -1,0 +1,17 @@
+# One vertical fracture (single_fracture.vtu, x = 0..10, z = 0..5): uniform
+# flow from west to east. Particles at equal distances on the west edge.
+flow = "single_fracture_flow.toml"
+seed = 12345
+time_unit = "days"
+porosity = 1.0
+max_time_steps = 100000
+inflow = ["west"]
+outflow = ["east"]
+routing = "complete_mixing"
+
+[seeding]
+method = "uniform_per_line"
+particles_per_line = 20
+
+[output]
+trajectories = true
