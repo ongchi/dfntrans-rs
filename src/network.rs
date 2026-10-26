@@ -401,9 +401,7 @@ pub fn build_network(
     let inflow_nodes = nodes_in(FlowZone::Inflow);
     let outflow_nodes = nodes_in(FlowZone::Outflow);
     if inflow_nodes.is_empty() || outflow_nodes.is_empty() {
-        return Err(DfntransError::InvalidNetwork(
-            "the in-flow and the out-flow boundary must each have at least one point (a point in both is in the in-flow boundary)".to_string(),
-        ));
+        return Err(DfntransError::EmptyInflowOutflow);
     }
 
     Ok(Network {
@@ -421,9 +419,7 @@ fn check_solution_sizes(mesh: &fehm::mesh::Mesh, solution: &Solution) -> Result<
         || solution.control_volumes.volumes.len() != node_count
         || solution.mass_fluxes.len() != solution.control_volumes.connections.len()
     {
-        return Err(DfntransError::InvalidNetwork(
-            "the flow solution is not a solution of this mesh".to_string(),
-        ));
+        return Err(DfntransError::FlowNotOfMesh);
     }
     Ok(())
 }
@@ -442,7 +438,9 @@ fn flow_zones(
                 .boundaries
                 .iter()
                 .find(|boundary| &boundary.name == name)
-                .ok_or_else(|| DfntransError::UnknownBoundary(name.clone()))?;
+                .ok_or_else(|| DfntransError::UnknownBoundary {
+                    boundary: name.clone(),
+                })?;
             for &node in &boundary.nodes {
                 zones[node] = Some(zone);
             }

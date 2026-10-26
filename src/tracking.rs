@@ -209,9 +209,7 @@ pub fn track_particles(
     let mut tracker = Tracker::new(&network, input);
     let particles = seed_particles(&mut tracker, &input.seeding, inflow_volume_flux)?;
     if particles.is_empty() {
-        return Err(DfntransError::NoParticles(
-            "the seeding gives no particle; check the in-flow boundary".to_string(),
-        ));
+        return Err(DfntransError::NoSeededParticle);
     }
     let particle_count = particles.len();
     info!(

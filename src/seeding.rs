@@ -266,9 +266,7 @@ fn random_particles(tracker: &mut Tracker, count: usize) -> Result<Vec<Particle>
             .all(|&node| network.nodes[node].zone != Some(FlowZone::Outflow))
     };
     if !(0..network.triangles.len().saturating_sub(1)).any(is_allowed) {
-        return Err(DfntransError::NoParticles(
-            "all cells (but the last one) have a node on the out-flow boundary".to_string(),
-        ));
+        return Err(DfntransError::NoCellForSeeding);
     }
 
     let cell_count = network.triangles.len();
@@ -306,9 +304,9 @@ fn flux_weighted_particles(
     inflow_volume_flux: f64,
 ) -> Result<Vec<Particle>, DfntransError> {
     if inflow_volume_flux.is_nan() || inflow_volume_flux <= 0.0 {
-        return Err(DfntransError::NoParticles(format!(
-            "the in-flow volume flux is {inflow_volume_flux:e} m³/s, not above 0"
-        )));
+        return Err(DfntransError::NoInflowFlux {
+            volume_flux: inflow_volume_flux,
+        });
     }
     let weight = inflow_volume_flux / count as f64;
     let lines = inflow_lines(network);

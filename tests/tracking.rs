@@ -214,7 +214,7 @@ fn unknown_boundary_name_is_an_error() {
         "inflow = [\"south\"]",
     );
     assert!(
-        matches!(run_input(&input), Err(DfntransError::UnknownBoundary(name)) if name == "south")
+        matches!(run_input(&input), Err(DfntransError::UnknownBoundary { boundary }) if boundary == "south")
     );
 }
 

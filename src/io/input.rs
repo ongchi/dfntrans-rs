@@ -188,8 +188,9 @@ struct InputFile {
 
 /// Reads the input file. The flow file is relative to the folder of the input file.
 pub fn read_input(path: &Path) -> Result<Input, DfntransError> {
-    let text = std::fs::read_to_string(path).map_err(|error| {
-        DfntransError::InvalidInput(format!("cannot read {}: {error}", path.display()))
+    let text = std::fs::read_to_string(path).map_err(|source| DfntransError::ReadInput {
+        file: path.display().to_string(),
+        source,
     })?;
     let mut input = build_input_from_text(&text)?;
     if let Some(folder) = path.parent() {
@@ -201,7 +202,7 @@ pub fn read_input(path: &Path) -> Result<Input, DfntransError> {
 /// Builds the input from the text of the input file.
 pub fn build_input_from_text(text: &str) -> Result<Input, DfntransError> {
     let file: InputFile =
-        toml::from_str(text).map_err(|error| DfntransError::InvalidInput(error.to_string()))?;
+        toml::from_str(text).map_err(|error| DfntransError::InvalidToml(error.to_string()))?;
     let input = Input {
         flow_file: file.flow,
         seed: file.seed,
@@ -221,25 +222,23 @@ pub fn build_input_from_text(text: &str) -> Result<Input, DfntransError> {
 }
 
 fn validate(input: &Input) -> Result<(), DfntransError> {
-    let invalid = |message: &str| Err(DfntransError::InvalidInput(message.to_string()));
-
     if !(input.porosity > 0.0 && input.porosity <= 1.0) {
-        return invalid("porosity must be above 0 and at most 1");
+        return Err(DfntransError::Porosity);
     }
     if input.max_time_steps == 0 {
-        return invalid("max_time_steps must be above 0");
+        return Err(DfntransError::MaxTimeSteps);
     }
     if input.inflow.is_empty() || input.outflow.is_empty() {
-        return invalid("inflow and outflow must each name at least one boundary");
+        return Err(DfntransError::InflowOutflowMissing);
     }
     if let Some(name) = input
         .inflow
         .iter()
         .find(|name| input.outflow.contains(name))
     {
-        return Err(DfntransError::InvalidInput(format!(
-            "the boundary {name} is in inflow and in outflow"
-        )));
+        return Err(DfntransError::BoundaryInInflowAndOutflow {
+            boundary: name.clone(),
+        });
     }
 
     let count = match input.seeding {
@@ -255,30 +254,30 @@ fn validate(input: &Input) -> Result<(), DfntransError> {
         Seeding::AtNodes { particles_per_node } => particles_per_node,
     };
     if count == 0 {
-        return invalid("the number of particles of seeding must be above 0");
+        return Err(DfntransError::ParticleCount);
     }
 
     if let Some(diffusion) = &input.matrix_diffusion {
         if !(diffusion.matrix_porosity > 0.0 && diffusion.matrix_porosity <= 1.0) {
-            return invalid("tdrw.matrix_porosity must be above 0 and at most 1");
+            return Err(DfntransError::MatrixPorosity);
         }
         if diffusion.matrix_diffusivity.is_nan() || diffusion.matrix_diffusivity <= 0.0 {
-            return invalid("tdrw.matrix_diffusivity must be above 0");
+            return Err(DfntransError::MatrixDiffusivity);
         }
     }
 
     match input.control_surfaces {
         Some(ControlSurfaces::Plane { spacing, .. }) if spacing.is_nan() || spacing <= 0.0 => {
-            invalid("control_planes.spacing must be above 0")
+            Err(DfntransError::ControlPlaneSpacing)
         }
         Some(ControlSurfaces::Cylinder {
             spacing,
             length_to_well,
             well_thickness,
             ..
-        }) if !(spacing > 0.0 && length_to_well > 0.0 && well_thickness >= 0.0) => invalid(
-            "control_planes.spacing and length_to_well must be above 0, and well_thickness at least 0",
-        ),
+        }) if !(spacing > 0.0 && length_to_well > 0.0 && well_thickness >= 0.0) => {
+            Err(DfntransError::WellControlSurface)
+        }
         _ => Ok(()),
     }
 }
@@ -335,33 +334,105 @@ particle_count = 100
         assert!(input.matrix_diffusion.is_some());
     }
 
+    fn input_error(text: &str) -> DfntransError {
+        build_input_from_text(text).unwrap_err()
+    }
+
     #[test]
     fn rejects_an_unknown_key() {
         let text = VALID.replace("seed = 1", "seed = 1\ndensity = 1000.0");
-        assert!(build_input_from_text(&text).is_err());
+        let error = input_error(&text);
+        assert!(matches!(error, DfntransError::InvalidToml(_)), "{error}");
     }
 
     #[test]
     fn rejects_an_unknown_key_of_the_seeding() {
         let text = VALID.replace("particle_count = 100", "particle_count = 100\nextra = 1");
-        assert!(build_input_from_text(&text).is_err());
+        let error = input_error(&text);
+        assert!(matches!(error, DfntransError::InvalidToml(_)), "{error}");
     }
 
     #[test]
     fn rejects_a_missing_key() {
         let text = VALID.replace("porosity = 1.0", "");
-        assert!(build_input_from_text(&text).is_err());
+        let error = input_error(&text);
+        assert!(matches!(error, DfntransError::InvalidToml(_)), "{error}");
     }
 
     #[test]
     fn rejects_a_boundary_in_inflow_and_outflow() {
         let text = VALID.replace(r#"["east"]"#, r#"["west"]"#);
-        assert!(build_input_from_text(&text).is_err());
+        let error = input_error(&text);
+        assert!(
+            matches!(&error, DfntransError::BoundaryInInflowAndOutflow { boundary } if boundary == "west"),
+            "{error}"
+        );
     }
 
     #[test]
     fn rejects_zero_particles() {
         let text = VALID.replace("particle_count = 100", "particle_count = 0");
-        assert!(build_input_from_text(&text).is_err());
+        let error = input_error(&text);
+        assert!(matches!(error, DfntransError::ParticleCount), "{error}");
+    }
+
+    #[test]
+    fn rejects_a_porosity_above_one() {
+        let error = input_error(&VALID.replace("porosity = 1.0", "porosity = 1.5"));
+        assert!(matches!(error, DfntransError::Porosity), "{error}");
+    }
+
+    #[test]
+    fn rejects_zero_time_steps() {
+        let error = input_error(&VALID.replace("max_time_steps = 1000", "max_time_steps = 0"));
+        assert!(matches!(error, DfntransError::MaxTimeSteps), "{error}");
+    }
+
+    #[test]
+    fn rejects_no_outflow_boundary() {
+        let error = input_error(&VALID.replace(r#"["east"]"#, "[]"));
+        assert!(
+            matches!(error, DfntransError::InflowOutflowMissing),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_zero_matrix_porosity() {
+        let text = format!("{VALID}\n[tdrw]\nmatrix_porosity = 0.0\nmatrix_diffusivity = 1e-13\n");
+        let error = input_error(&text);
+        assert!(matches!(error, DfntransError::MatrixPorosity), "{error}");
+    }
+
+    #[test]
+    fn rejects_a_zero_matrix_diffusivity() {
+        let text = format!("{VALID}\n[tdrw]\nmatrix_porosity = 0.02\nmatrix_diffusivity = 0.0\n");
+        let error = input_error(&text);
+        assert!(matches!(error, DfntransError::MatrixDiffusivity), "{error}");
+    }
+
+    #[test]
+    fn rejects_a_zero_plane_spacing() {
+        let text = format!(
+            "{VALID}\n[control_planes]\nshape = \"plane\"\ndirection = \"x\"\nspacing = 0.0\n"
+        );
+        let error = input_error(&text);
+        assert!(
+            matches!(error, DfntransError::ControlPlaneSpacing),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_negative_well_thickness() {
+        let text = format!(
+            "{VALID}\n[control_planes]\nshape = \"cylinder\"\naxis = \"z\"\nspacing = 1.0\n\
+             length_to_well = 10.0\nwell_thickness = -1.0\n"
+        );
+        let error = input_error(&text);
+        assert!(
+            matches!(error, DfntransError::WellControlSurface),
+            "{error}"
+        );
     }
 }
