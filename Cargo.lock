@@ -196,7 +196,7 @@ checksum = "930c7171c8df9fb1782bdf9b918ed9ed2d33d1d22300abb754f9085bc48bf8e8"
 [[package]]
 name = "dfngen-rs"
 version = "0.13.0"
-source = "git+https://github.com/ongchi/dfngen-rs?branch=master#67dfbf4247425d55254fc2251fa5b2f3a25c321f"
+source = "git+https://github.com/ongchi/dfngen-rs?branch=master#4c452daf81be5d284fc6c01d3175b1ca49c34d89"
 dependencies = [
  "i_overlay",
  "parry3d-f64",
@@ -220,6 +220,7 @@ dependencies = [
  "clap",
  "dfngen-rs",
  "fehm-rs",
+ "libm",
  "serde",
  "thiserror 2.0.21",
  "toml",

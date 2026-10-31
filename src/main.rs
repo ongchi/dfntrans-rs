@@ -6,6 +6,8 @@ use clap::Parser;
 use dfntrans::{DfntransError, read_input, track_particles, write_output_to_folder};
 use tracing::{error, info};
 
+mod libm_symbols;
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {

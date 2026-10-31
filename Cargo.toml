@@ -15,11 +15,14 @@ required-features = ["cli"]
 
 [features]
 default = ["cli"]
-# The dfntrans binary: command line and log to stdout
-cli = ["dep:clap", "dep:tracing-subscriber"]
+# The dfntrans binary: command line, log to stdout and the math functions of
+# WebAssembly
+cli = ["dep:clap", "dep:libm", "dep:tracing-subscriber"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"], optional = true }
+# The math functions of the binary (src/libm_symbols.rs)
+libm = { version = "0.2.16", optional = true }
 # The flow solution; without its binary, thus it compiles for wasm32-unknown-unknown
 fehm-rs = { git = "https://github.com/ongchi/fehm-rs", branch = "master", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
