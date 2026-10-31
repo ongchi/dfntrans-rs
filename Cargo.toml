@@ -21,7 +21,7 @@ cli = ["dep:clap", "dep:tracing-subscriber"]
 [dependencies]
 clap = { version = "4.5", features = ["derive"], optional = true }
 # The flow solution; without its binary, thus it compiles for wasm32-unknown-unknown
-fehm-rs = { path = "../fehm-rs", default-features = false }
+fehm-rs = { git = "https://github.com/ongchi/fehm-rs", branch = "master", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 toml = { version = "1.1", default-features = false, features = ["std", "parse", "serde"] }
@@ -30,7 +30,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 
 [dev-dependencies]
 # tests/dfngen_chain.rs: a network and its mesh, made in the test
-dfngen-rs = { path = "../dfngen-rs", default-features = false }
+dfngen-rs = { git = "https://github.com/ongchi/dfngen-rs", branch = "master", default-features = false }
 
 [profile.release]
 lto = "fat"
