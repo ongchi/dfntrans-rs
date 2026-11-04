@@ -280,3 +280,32 @@ fn output_files_have_one_entry_for_each_particle() {
     assert!(trajectories.contains(&format!(r#"NumberOfPoints="{point_count}""#)));
     assert!(trajectories.trim_end().ends_with("</VTKFile>"));
 }
+
+/// Intersections which end next to each other at the outline of a fracture:
+/// the outline neighbors of a node on an intersection are on other
+/// intersections. The halves of the node are divided at its intersection
+/// edge, not at an outline edge, and a sector of faces on one line gets no
+/// singular fit (it gave about 1e40).
+#[test]
+fn sector_velocities_stay_near_the_darcy_velocities_where_intersections_end_at_an_outline() {
+    let input = read_input(Path::new("tests/data/outline_intersections.toml")).unwrap();
+    let flow = fehm::read_input(&input.flow_file).unwrap();
+    let solution = fehm::solve(&flow).unwrap();
+    let largest_darcy_speed = fehm::velocity::calculate_darcy_velocities(&flow, &solution.pressures)
+        .iter()
+        .map(|velocity| velocity.iter().map(|component| component * component).sum::<f64>().sqrt())
+        .fold(0.0, f64::max);
+    let transport = track_particles(&input, &flow, &solution).unwrap();
+    // Seconds and porosity 1: a sector velocity has the units of the Darcy velocity
+    let largest_sector_speed = transport
+        .network
+        .nodes
+        .iter()
+        .flat_map(|node| &node.sectors)
+        .map(|sector| sector.velocity[0].hypot(sector.velocity[1]))
+        .fold(0.0, f64::max);
+    assert!(
+        largest_sector_speed < 100.0 * largest_darcy_speed,
+        "largest sector speed {largest_sector_speed:e}, largest Darcy speed {largest_darcy_speed:e}"
+    );
+}

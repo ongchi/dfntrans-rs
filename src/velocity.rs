@@ -22,6 +22,7 @@ use crate::network::{Network, Node, PI, Sector};
 /// unit; `seconds_per_time_unit` converts it.
 pub fn reconstruct_velocities(network: &mut Network, porosity: f64, seconds_per_time_unit: f64) {
     let mut nodes_without_boundary_edges = 0;
+    let mut singular = SingularSectors::default();
     for node in 0..network.nodes.len() {
         let has_boundary_edges = if network.nodes[node].fractures.len() == 1 {
             single_fracture_velocity(network, node, porosity, seconds_per_time_unit)
@@ -29,8 +30,14 @@ pub fn reconstruct_velocities(network: &mut Network, porosity: f64, seconds_per_
             // Each fracture of the node, also after one without boundary edges
             let mut has_all = true;
             for slot in 0..network.nodes[node].fractures.len() {
-                has_all &=
-                    interface_velocities(network, node, slot, porosity, seconds_per_time_unit);
+                has_all &= interface_velocities(
+                    network,
+                    node,
+                    slot,
+                    porosity,
+                    seconds_per_time_unit,
+                    &mut singular,
+                );
             }
             has_all
         };
@@ -41,6 +48,12 @@ pub fn reconstruct_velocities(network: &mut Network, porosity: f64, seconds_per_
     if nodes_without_boundary_edges > 0 {
         warn!(
             "{nodes_without_boundary_edges} nodes on a fracture edge do not have two edges on it; their velocity has no boundary condition"
+        );
+    }
+    if singular.sector_count > 0 {
+        warn!(
+            "{} sectors of nodes on an intersection have faces in one direction; they get the velocity of all faces of the node in their fracture ({} of them: 0, these faces also have one direction)",
+            singular.sector_count, singular.without_velocity_count
         );
     }
 
@@ -54,6 +67,14 @@ pub fn reconstruct_velocities(network: &mut Network, porosity: f64, seconds_per_
 struct FaceFlux {
     normal_area: [f64; 2],
     mass_flux: f64,
+}
+
+/// The counts of the sectors whose faces have one direction (`is_singular`)
+#[derive(Default)]
+struct SingularSectors {
+    sector_count: usize,
+    /// Also all faces of the node in the fracture have one direction: velocity 0
+    without_velocity_count: usize,
 }
 
 /// The no-flow condition on the fracture edge at an exterior node (`struct lb`)
@@ -152,13 +173,16 @@ struct Sectoring {
 
 /// Velocities of a node on an intersection in the fracture of `slot`
 /// (`HalfPolygonVelocity`). Returns false if the node is on a fracture edge
-/// and the fit has no boundary condition.
+/// and the fit has no boundary condition. Unlike DFNTrans, a sector whose
+/// faces have one direction gets the fit of all faces of the node in the
+/// fracture (DFNTrans: a determinant of 1e-75, a velocity of about 1e40).
 fn interface_velocities(
     network: &mut Network,
     node: usize,
     slot: usize,
     porosity: f64,
     seconds_per_time_unit: f64,
+    singular: &mut SingularSectors,
 ) -> bool {
     let fracture = network.nodes[node].fractures[slot];
     let triangles_in_fracture = |edge: usize| {
@@ -179,11 +203,13 @@ fn interface_velocities(
         .copied()
         .filter(|&edge| triangles_in_fracture(edge) == 1)
         .collect();
-    // DFNTrans: a face to a node on an intersection is an intersection edge
+    // Unlike DFNTrans (a face to a node on an intersection), a face with
+    // triangles in two fractures: the neighbor of a node on the fracture
+    // edge can be on another intersection
     let intersection_edges: Vec<usize> = edges
         .iter()
         .copied()
-        .filter(|&edge| network.nodes[network.nodes[node].neighbors[edge].node].is_on_interface())
+        .filter(|&edge| is_intersection_edge(network, node, edge))
         .collect();
 
     let sectoring = if network.nodes[node].fractures.len() == 2 {
@@ -208,22 +234,37 @@ fn interface_velocities(
     }
     let first_sector = network.nodes[node].sectors.len();
 
+    let all_face_fluxes: Vec<FaceFlux> = edges
+        .iter()
+        .map(|&edge| face_flux(network, node, edge, fracture))
+        .collect();
     for faces in &sectoring.faces {
         let face_fluxes: Vec<FaceFlux> = faces
             .iter()
             .map(|&edge| face_flux(network, node, edge, fracture))
             .collect();
-        let velocity = if face_fluxes.is_empty() {
-            [0.0, 0.0]
+        let fitted_faces = if face_fluxes.is_empty() {
+            None
+        } else if !is_singular(&face_fluxes) {
+            Some(&face_fluxes)
         } else {
+            singular.sector_count += 1;
+            if is_singular(&all_face_fluxes) {
+                singular.without_velocity_count += 1;
+                None
+            } else {
+                Some(&all_face_fluxes)
+            }
+        };
+        let velocity = fitted_faces.map_or([0.0, 0.0], |faces| {
             fit_velocity(
                 &network.nodes[node],
-                &face_fluxes,
+                faces,
                 fit,
                 porosity,
                 seconds_per_time_unit,
             )
-        };
+        });
         network.nodes[node].sectors.push(Sector {
             fracture,
             velocity,
@@ -254,6 +295,15 @@ const LINE_TOLERANCE: f64 = 1e-10;
 
 /// The relative difference below which two edge lengths are equal
 const LENGTH_TOLERANCE: f64 = 1e-10;
+
+/// A face whose triangles are in more than one fracture: an edge of an
+/// intersection line
+fn is_intersection_edge(network: &Network, node: usize, edge: usize) -> bool {
+    let triangles = &network.nodes[node].neighbors[edge].triangles;
+    triangles.iter().any(|&triangle| {
+        network.triangles[triangle].fracture != network.triangles[triangles[0]].fracture
+    })
+}
 
 /// The corner of `node` in a triangle
 fn corner_of(network: &Network, triangle: usize, node: usize) -> Option<usize> {
@@ -328,12 +378,6 @@ fn triangle_groups(network: &Network, node: usize, fracture: usize, edges: &[usi
             .filter(|&triangle| network.triangles[triangle].fracture == fracture)
             .collect()
     };
-    let is_intersection_edge = |edge: usize| {
-        neighbors[edge]
-            .triangles
-            .iter()
-            .any(|&triangle| network.triangles[triangle].fracture != fracture)
-    };
 
     // The group of each triangle: start with one group for each triangle,
     // then join the groups of the triangles of each face which is not an
@@ -348,7 +392,7 @@ fn triangle_groups(network: &Network, node: usize, fracture: usize, edges: &[usi
             .expect("triangle of a face")
     };
     for &edge in edges {
-        if is_intersection_edge(edge) {
+        if is_intersection_edge(network, node, edge) {
             continue;
         }
         let members: Vec<usize> = in_fracture(edge).into_iter().map(index_of).collect();
@@ -426,6 +470,31 @@ fn boundary_condition(
     }
 }
 
+/// GᵀG of the faces (`MatrixProducts`)
+fn normal_products(faces: &[FaceFlux]) -> [[f64; 2]; 2] {
+    let mut product = [[0.0; 2]; 2];
+    for face in faces {
+        for (row, &first) in product.iter_mut().zip(&face.normal_area) {
+            for (entry, &second) in row.iter_mut().zip(&face.normal_area) {
+                *entry += first * second;
+            }
+        }
+    }
+    product
+}
+
+/// The relative size of the determinant of GᵀG (to the product of its
+/// diagonal) at or below which the faces have one direction
+const SINGULAR_TOLERANCE: f64 = 1e-10;
+
+/// The faces have one direction within the rounding, as two faces on a
+/// straight fracture edge: GᵀG is singular and the fit has no solution
+fn is_singular(faces: &[FaceFlux]) -> bool {
+    let product = normal_products(faces);
+    let determinant = product[0][0] * product[1][1] - product[0][1] * product[1][0];
+    determinant.abs() <= SINGULAR_TOLERANCE * product[0][0] * product[1][1]
+}
+
 /// Least squares fit of the velocity to the face fluxes, divided by the
 /// density and the porosity (`MatrixProducts`, `VelocityInteriorNode`,
 /// `VelocityExteriorNode`)
@@ -438,15 +507,7 @@ fn fit_velocity(
 ) -> [f64; 2] {
     const SMALLEST_DETERMINANT: f64 = 1e-75;
 
-    // GᵀG
-    let mut product = [[0.0; 2]; 2];
-    for face in faces {
-        for (row, &first) in product.iter_mut().zip(&face.normal_area) {
-            for (entry, &second) in row.iter_mut().zip(&face.normal_area) {
-                *entry += first * second;
-            }
-        }
-    }
+    let product = normal_products(faces);
     let mut determinant = product[0][0] * product[1][1] - product[0][1] * product[1][0];
     if determinant.abs() < SMALLEST_DETERMINANT {
         determinant = SMALLEST_DETERMINANT;
@@ -747,5 +808,32 @@ fn define_time_steps(network: &mut Network) {
             };
             sector.time_step = 0.005 * (area / divisor).sqrt();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn face(normal_area: [f64; 2]) -> FaceFlux {
+        FaceFlux {
+            normal_area,
+            mass_flux: 1.0,
+        }
+    }
+
+    #[test]
+    fn faces_on_one_line_are_singular() {
+        assert!(is_singular(&[face([1.0, 1.0]), face([-12.0, -12.0])]));
+    }
+
+    #[test]
+    fn faces_almost_on_one_line_are_singular() {
+        assert!(is_singular(&[face([1.0, 1.0]), face([-12.0, -12.0 * (1.0 + 1e-7)])]));
+    }
+
+    #[test]
+    fn faces_in_two_directions_are_not_singular() {
+        assert!(!is_singular(&[face([1.0, 1.0]), face([-12.0, 3.0])]));
     }
 }

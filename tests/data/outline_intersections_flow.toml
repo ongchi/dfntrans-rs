@@ -1,0 +1,13 @@
+# A dfngen-rs network without FRAM in a cube of 10 m (outline_intersections.vtu:
+# web example box_west_east, n_poly 10, seed 6, FRAM off): flow from west to east
+mesh = "outline_intersections.vtu"
+temperature = 20.0
+gravity = false
+
+[[boundary]]
+name = "west"
+pressure = 10.1
+
+[[boundary]]
+name = "east"
+pressure = 10.0

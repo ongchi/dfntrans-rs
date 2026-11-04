@@ -140,6 +140,17 @@ Deliberate changes:
   DFNTrans, the other edge of a straight line is in one or both halves by
   the rounding of its single precision rotation and of fused
   multiply-add; in exact arithmetic it is in both.
+- The line of the halves is the last face whose triangles are in two
+  fractures (an intersection edge). DFNTrans takes the last face to a node
+  on an intersection, which is an edge of the fracture outline if the
+  intersection ends at the outline and the outline neighbor is on another
+  intersection (frequent in a network without FRAM). Then one half has only
+  the two outline faces, on one line.
+- A sector whose faces have one direction (the determinant of the least
+  squares fit is at most 1e-10 of the product of its diagonal) gets the fit
+  of all faces of the node in its fracture, or the velocity 0 if these also
+  have one direction, with a warning. DFNTrans sets the determinant to
+  1e-75 and gets a velocity of about 1e40.
 - The line of the halves uses the coordinates of the neighbor in the
   fracture of the half. DFNTrans uses the coordinates of the slot of the
   node (`coord_xy[ic]`), which is another fracture if the neighbor is on

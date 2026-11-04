@@ -1,0 +1,20 @@
+# Intersections which end at the outline of a fracture next to each other
+# (outline_intersections_flow.toml): the outline neighbors of a node on an
+# intersection are on other intersections. Velocities in m/s, as the Darcy
+# velocity of fehm-rs.
+flow = "outline_intersections_flow.toml"
+seed = 12345
+time_unit = "seconds"
+porosity = 1.0
+max_time_steps = 1000000
+inflow = ["west"]
+outflow = ["east"]
+routing = "complete_mixing"
+
+[seeding]
+method = "uniform_per_line"
+particles_per_line = 3
+weight_by_flux = false
+
+[output]
+trajectories = false
