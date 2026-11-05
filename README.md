@@ -6,8 +6,8 @@ port of DFNTrans, the particle tracking of
 
     dfngen-rs (dfn_mesh.vtu) → fehm-rs (pressures, mass fluxes) → dfntrans-rs (particles)
 
-The flow solution comes from [fehm-rs](../fehm-rs), on a triangle mesh of
-[dfngen-rs](../dfngen-rs). The velocity at each node is reconstructed from
+The flow solution comes from [fehm-rs](https://github.com/ongchi/fehm-rs), on a triangle mesh of
+[dfngen-rs](https://github.com/ongchi/dfngen-rs). The velocity at each node is reconstructed from
 the fluxes of its control volume; the particles move with a
 predictor-corrector scheme in the plane of each fracture, and an
 intersection rule selects the next fracture.
