@@ -81,6 +81,60 @@ fn uniform_flow_keeps_the_height_of_a_particle() {
     }
 }
 
+/// The single fracture case with particles at given points (y = 0 is the
+/// plane of the fracture)
+fn single_fracture_with_points(points: &str) -> Input {
+    changed_input(
+        "single_fracture.toml",
+        "method = \"uniform_per_line\"\nparticles_per_line = 20",
+        &format!("method = \"points\"\npoints = {points}\nparticles_per_point = 2"),
+    )
+}
+
+#[test]
+fn particles_at_points_take_the_travel_time_from_their_points() {
+    let input = single_fracture_with_points("[[4.0, 0.0, 2.5], [7.5, 1e-3, 1.2]]");
+    let transport = run_input(&input).unwrap();
+    let speed = transport.inflow_volume_flux / (5.0 * 1e-4) * input.time_unit.seconds();
+    let starts = [4.0, 4.0, 7.5, 7.5];
+    assert_eq!(transport.exit_count, 4);
+    // The error of the time steps is absolute: the tolerance of the uniform
+    // flow test, on the time of the full length
+    let tolerance = 1e-3 * 10.0 / speed;
+    for particle in &transport.particles {
+        let expected = (10.0 - starts[particle.index]) / speed;
+        assert!(
+            (particle.travel_time - expected).abs() < tolerance,
+            "{} {expected}",
+            particle.travel_time
+        );
+    }
+}
+
+#[test]
+fn particles_at_points_keep_the_height_of_their_points() {
+    let input = single_fracture_with_points("[[4.0, 0.0, 2.5], [7.5, 1e-3, 1.2]]");
+    let transport = run_input(&input).unwrap();
+    let heights = [2.5, 2.5, 1.2, 1.2];
+    for particle in &transport.particles {
+        assert!(
+            (particle.final_position[2] - heights[particle.index]).abs() < 1e-6,
+            "{:?}",
+            particle.final_position
+        );
+    }
+}
+
+#[test]
+fn seeding_point_far_from_the_mesh_is_an_error() {
+    let input = single_fracture_with_points("[[4.0, 0.0, 2.5], [4.0, 3.0, 2.5]]");
+    let result = run_input(&input);
+    assert!(matches!(
+        result,
+        Err(DfntransError::SeedingPointOutsideMesh { index: 2, .. })
+    ));
+}
+
 #[test]
 fn particles_at_an_intersection_go_into_both_outgoing_fractures() {
     let (_, transport) = run("crossing_fractures.toml");
@@ -291,10 +345,17 @@ fn sector_velocities_stay_near_the_darcy_velocities_where_intersections_end_at_a
     let input = read_input(Path::new("tests/data/outline_intersections.toml")).unwrap();
     let flow = fehm::read_input(&input.flow_file).unwrap();
     let solution = fehm::solve(&flow).unwrap();
-    let largest_darcy_speed = fehm::velocity::calculate_darcy_velocities(&flow, &solution.pressures)
-        .iter()
-        .map(|velocity| velocity.iter().map(|component| component * component).sum::<f64>().sqrt())
-        .fold(0.0, f64::max);
+    let largest_darcy_speed =
+        fehm::velocity::calculate_darcy_velocities(&flow, &solution.pressures)
+            .iter()
+            .map(|velocity| {
+                velocity
+                    .iter()
+                    .map(|component| component * component)
+                    .sum::<f64>()
+                    .sqrt()
+            })
+            .fold(0.0, f64::max);
     let transport = track_particles(&input, &flow, &solution).unwrap();
     // Seconds and porosity 1: a sector velocity has the units of the Darcy velocity
     let largest_sector_speed = transport

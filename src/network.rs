@@ -66,6 +66,11 @@ impl Fracture {
         }
     }
 
+    /// Signed distance of a point from the plane of the fracture
+    pub fn distance_from_plane(&self, point: [f64; 3]) -> f64 {
+        self.rotated_z(point) - self.third_coordinate
+    }
+
     /// The z coordinate of a point after the rotation into the xy plane
     fn rotated_z(&self, point: [f64; 3]) -> f64 {
         match &self.rotation_to_plane {

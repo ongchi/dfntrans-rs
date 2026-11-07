@@ -71,6 +71,7 @@ in one fracture.
 | `random` | `particle_count` | at the centers of random triangles without an out-flow point | aperture | `init_random` |
 | `flux_weighted` | `particle_count` | on the in-flow lines: at least one for each point, and one for each part `total flux / particle_count` of its flux | `total flux / particle_count` (m³/s) | `init_fluxw` |
 | `at_nodes` | `particles_per_node` | at each in-flow point | aperture | `init_well` |
+| `points` | `points` (list of [x, y, z] in the coordinates of the mesh), `particles_per_point` | at each point, in its nearest triangle; a point farther from that triangle than its longest edge is an error | aperture | none (dfntrans-rs only) |
 
 A particle which starts exactly at a point of a fracture edge can move
 along the edge and leave the fracture (also in DFNTrans: at an in-flow
@@ -166,6 +167,8 @@ Deliberate changes:
 - The seeding methods on the in-flow boundary use the in-flow lines of
   any shape; DFNTrans uses the segment between the first and the last
   in-flow point (by number) of each fracture.
+- The seeding method `points` (particles at given 3D points, for example
+  points picked in a 3D view) is not in DFNTrans.
 - Bad input gives an error; DFNTrans prints "Error" and continues.
 
 Kept as in DFNTrans (they change the results):

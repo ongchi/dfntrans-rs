@@ -205,8 +205,124 @@ pub(crate) fn seed_particles(
             normalize_weights(&mut particles);
             particles
         }
+        Seeding::Points {
+            ref points,
+            particles_per_point,
+        } => {
+            let mut particles = Vec::new();
+            for (index, &point) in points.iter().enumerate() {
+                let particle = particle_at_point(tracker, point).ok_or(
+                    DfntransError::SeedingPointOutsideMesh {
+                        index: index + 1,
+                        x: point[0],
+                        y: point[1],
+                        z: point[2],
+                    },
+                )?;
+                particles.extend(std::iter::repeat_n(particle, particles_per_point));
+            }
+            normalize_weights(&mut particles);
+            particles
+        }
     };
     Ok(particles)
+}
+
+/// A particle at the point of its nearest triangle which is nearest to a 3D
+/// point, weighted by aperture (not in DFNTrans). `None` if the distance is
+/// more than the longest edge of that triangle.
+fn particle_at_point(tracker: &Tracker, point: [f64; 3]) -> Option<Particle> {
+    let network = tracker.network;
+    let (cell, position, distance) = (0..network.triangles.len())
+        .map(|cell| {
+            let (position, distance) = nearest_point_of_triangle(network, cell, point);
+            (cell, position, distance)
+        })
+        .min_by(|first, second| first.2.total_cmp(&second.2))?;
+
+    let triangle = &network.triangles[cell];
+    let longest_edge = (0..3)
+        .map(|corner| {
+            let first = network.nodes[triangle.nodes[corner]].position;
+            let second = network.nodes[triangle.nodes[(corner + 1) % 3]].position;
+            distance_3d(first, second)
+        })
+        .fold(0.0, f64::max);
+    // A coordinate which is not a number gives a distance which is not a number
+    if distance.is_nan() || distance > longest_edge {
+        return None;
+    }
+
+    let mut particle = Particle::new(
+        position,
+        triangle.fracture,
+        network.nodes[triangle.nodes[0]].aperture,
+    );
+    if !tracker.is_inside(&mut particle, cell) {
+        tracker.move_to_center(&mut particle, cell);
+    }
+    Some(particle)
+}
+
+/// The point of a triangle (2D, in its fracture) which is nearest to a 3D
+/// point, and the distance between them
+fn nearest_point_of_triangle(network: &Network, cell: usize, point: [f64; 3]) -> ([f64; 2], f64) {
+    let triangle = &network.triangles[cell];
+    let fracture = &network.fractures[triangle.fracture];
+    let corners = triangle
+        .nodes
+        .map(|node| network.nodes[node].position_in(triangle.fracture));
+    let projected = fracture.to_plane(point);
+
+    let nearest = if is_in_triangle(corners, projected) {
+        projected
+    } else {
+        (0..3)
+            .map(|corner| {
+                nearest_point_of_segment(corners[corner], corners[(corner + 1) % 3], projected)
+            })
+            .min_by(|first, second| {
+                distance_2d(*first, projected).total_cmp(&distance_2d(*second, projected))
+            })
+            .unwrap_or(projected)
+    };
+    let distance = distance_2d(nearest, projected).hypot(fracture.distance_from_plane(point));
+    (nearest, distance)
+}
+
+fn is_in_triangle([a, b, c]: [[f64; 2]; 3], point: [f64; 2]) -> bool {
+    let side = |first: [f64; 2], second: [f64; 2]| {
+        (second[0] - first[0]) * (point[1] - first[1])
+            - (second[1] - first[1]) * (point[0] - first[0])
+    };
+    let sides = [side(a, b), side(b, c), side(c, a)];
+    sides.iter().all(|&value| value >= 0.0) || sides.iter().all(|&value| value <= 0.0)
+}
+
+fn nearest_point_of_segment(start: [f64; 2], end: [f64; 2], point: [f64; 2]) -> [f64; 2] {
+    let direction = [end[0] - start[0], end[1] - start[1]];
+    let length_squared = direction[0] * direction[0] + direction[1] * direction[1];
+    if length_squared == 0.0 {
+        return start;
+    }
+    let fraction = (((point[0] - start[0]) * direction[0] + (point[1] - start[1]) * direction[1])
+        / length_squared)
+        .clamp(0.0, 1.0);
+    [
+        start[0] + fraction * direction[0],
+        start[1] + fraction * direction[1],
+    ]
+}
+
+fn distance_2d(first: [f64; 2], second: [f64; 2]) -> f64 {
+    (first[0] - second[0]).hypot(first[1] - second[1])
+}
+
+fn distance_3d(first: [f64; 3], second: [f64; 3]) -> f64 {
+    let squared: f64 = (0..3)
+        .map(|axis| (first[axis] - second[axis]).powi(2))
+        .sum();
+    squared.sqrt()
 }
 
 fn normalize_weights(particles: &mut [Particle]) {

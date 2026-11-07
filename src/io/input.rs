@@ -100,6 +100,12 @@ pub enum Seeding {
     FluxWeighted { particle_count: usize },
     /// Particles at each in-flow point, weighted by aperture (`init_well`)
     AtNodes { particles_per_node: usize },
+    /// Particles at given points (x, y, z in the coordinates of the mesh),
+    /// each in its nearest triangle, weighted by aperture (not in DFNTrans)
+    Points {
+        points: Vec<[f64; 3]>,
+        particles_per_point: usize,
+    },
 }
 
 fn default_true() -> bool {
@@ -241,7 +247,7 @@ fn validate(input: &Input) -> Result<(), DfntransError> {
         });
     }
 
-    let count = match input.seeding {
+    let count = match &input.seeding {
         Seeding::UniformPerLine {
             particles_per_line, ..
         }
@@ -252,8 +258,15 @@ fn validate(input: &Input) -> Result<(), DfntransError> {
             particle_count
         }
         Seeding::AtNodes { particles_per_node } => particles_per_node,
+        Seeding::Points { points, .. } if points.is_empty() => {
+            return Err(DfntransError::NoSeedingPoints);
+        }
+        Seeding::Points {
+            particles_per_point,
+            ..
+        } => particles_per_point,
     };
-    if count == 0 {
+    if *count == 0 {
         return Err(DfntransError::ParticleCount);
     }
 
@@ -374,6 +387,37 @@ particle_count = 100
         let text = VALID.replace("particle_count = 100", "particle_count = 0");
         let error = input_error(&text);
         assert!(matches!(error, DfntransError::ParticleCount), "{error}");
+    }
+
+    fn with_points(points: &str) -> String {
+        VALID.replace(
+            "method = \"flux_weighted\"\nparticle_count = 100",
+            &format!("method = \"points\"\npoints = {points}\nparticles_per_point = 3"),
+        )
+    }
+
+    #[test]
+    fn reads_the_seeding_points() {
+        let input = build_input_from_text(&with_points("[[1.0, 2.0, 3.0]]")).unwrap();
+        assert_eq!(
+            input.seeding,
+            Seeding::Points {
+                points: vec![[1.0, 2.0, 3.0]],
+                particles_per_point: 3
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_no_seeding_point() {
+        let error = input_error(&with_points("[]"));
+        assert!(matches!(error, DfntransError::NoSeedingPoints), "{error}");
+    }
+
+    #[test]
+    fn rejects_a_seeding_point_of_two_coordinates() {
+        let error = input_error(&with_points("[[1.0, 2.0]]"));
+        assert!(matches!(error, DfntransError::InvalidToml(_)), "{error}");
     }
 
     #[test]

@@ -20,6 +20,8 @@ pub enum DfntransError {
     BoundaryInInflowAndOutflow { boundary: String },
     #[error("Invalid input file: the number of particles of seeding must be above 0")]
     ParticleCount,
+    #[error("Invalid input file: seeding.points must have at least one point")]
+    NoSeedingPoints,
     #[error("Invalid input file: tdrw.matrix_porosity must be above 0 and at most 1")]
     MatrixPorosity,
     #[error("Invalid input file: tdrw.matrix_diffusivity must be above 0")]
@@ -49,6 +51,16 @@ pub enum DfntransError {
         "No particle was placed: all cells (but the last one) have a node on the out-flow boundary"
     )]
     NoCellForSeeding,
+    /// `index` from 1
+    #[error(
+        "No particle was placed: seeding point {index} ({x}, {y}, {z}) is not on the mesh; its distance to the nearest triangle is more than the longest edge of that triangle"
+    )]
+    SeedingPointOutsideMesh {
+        index: usize,
+        x: f64,
+        y: f64,
+        z: f64,
+    },
     #[error("No particle was placed: the in-flow volume flux is {volume_flux:e} m³/s, not above 0")]
     NoInflowFlux { volume_flux: f64 },
     #[error(transparent)]
